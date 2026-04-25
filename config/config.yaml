@@ -1,0 +1,145 @@
+# ============================================================
+# Text Polarity Classification - Central Config
+# ============================================================
+# 所有 Method 共用的參數集中管理於此。
+# 目前 Method 0 / Method 1 的程式碼不依賴此檔案；
+# 從 Method 2 起，程式碼將透過 load_config() 讀取。
+# ============================================================
+
+# ------------------------------------------------------------
+# 全域設定
+# ------------------------------------------------------------
+global:
+  random_seed: 42
+  n_jobs: -1                # -1 = 使用全部 CPU 核心
+  device: auto              # auto = cuda（若可用），否則退回 cpu；或直接填 cpu / cuda
+
+# ------------------------------------------------------------
+# 資料路徑（相對於專案根目錄）
+# ------------------------------------------------------------
+paths:
+  train:             datasets/train_2022.csv
+  test:              datasets/test_2022.csv
+  sample_submission: datasets/sample_submission.csv
+  models_dir:        models
+
+  submissions:
+    method0_baseline:  results/submission_baseline.csv
+    method1_xgb:       results/submission_method1_xgb.csv
+    method2:           results/submission_method2.csv
+
+# ------------------------------------------------------------
+# 當前實驗（train.py 用來決定寫入哪個 experiments/ 子目錄）
+# ------------------------------------------------------------
+experiment:
+  id:   exp_006_NLI
+  name: NLI - BERT + NLI for domain + Meta (LDA disabled)
+
+# ------------------------------------------------------------
+# 前處理
+# ------------------------------------------------------------
+preprocessing:
+  # Track A：還原括號標記、只保留英文字母 (供 TF-IDF / LDA 使用)
+  track_a:
+    lrb_token:  "-lrb-"
+    rrb_token:  "-rrb-"
+    keep_only_alpha: true
+
+  # Track B：還原括號為可讀字元，保留標點與上下文 (供 BERT 使用)
+  track_b:
+    lrb_replace: "("
+    rrb_replace: ")"
+    keep_punctuation: true
+
+  # 特殊佔位符（主辦方已處理，不需額外清除）
+  special_tokens:
+    num_token:    "num_num"
+    extend_token: "num_extend"
+
+# ------------------------------------------------------------
+# 特徵工程
+# ------------------------------------------------------------
+features:
+  count_vec:                    # LDA 的前置向量化，使用詞頻（CountVectorizer）
+    max_features: 5000
+    stop_words:   english
+    min_df:       2
+
+  lda:
+    enabled:      false       # true = 啟用；false = 消融實驗（不加入 LDA 特徵）
+    n_topics:     3
+    random_state: 42          # 覆寫 global.random_seed 以明確追蹤
+
+  meta:
+    use_question_mark: true   # ? 計數
+    use_exclaim_mark:  true   # ! 計數
+
+  sentence_transformer:
+    model_name:  all-MiniLM-L6-v2    # 384-dim，輕量通用模型
+    batch_size:  32
+    device:      auto                 # 繼承 global.device；SentenceTransformer(device=...) 直接吃此值
+    # 備選模型（Method 2 起可切換）：
+    # model_name: all-mpnet-base-v2                               # 768-dim，較高品質
+    # model_name: cardiffnlp/twitter-roberta-base-sentiment-latest # 情感導向
+
+  nli:
+    enabled:    true                 # true = 啟用 Zero-shot NLI domain 特徵
+    model_name: cross-encoder/nli-deberta-v3-small
+    candidate_labels:
+      - movie review
+      - product review
+      - game review
+    batch_size: 32
+    device:     auto
+
+# ------------------------------------------------------------
+# 模型參數
+# ------------------------------------------------------------
+models:
+  # Method 0：Logistic Regression
+  logistic_regression:
+    max_iter:     1000
+    random_state: 42
+
+  # Method 1：XGBoost Classifier（無正則化，供對照）
+  xgboost_m1:
+    n_estimators:    100
+    learning_rate:   0.1
+    max_depth:       4
+    random_state:    42
+    eval_metric:     logloss
+    device:          cuda
+
+  # Method 2：XGBoost Classifier（加入正則化，防止 2000 筆過擬合）
+  xgboost:
+    n_estimators:    300
+    learning_rate:   0.05
+    max_depth:       3
+    random_state:    42
+    eval_metric:     logloss
+    device:          cuda
+    subsample:       0.8
+    colsample_bytree: 0.8
+    reg_alpha:       0.1
+    reg_lambda:      1.0
+
+  # Method 2 預留：Fine-tuned BERT（參數待定）
+  # bert_finetune:
+  #   base_model:       distilbert-base-uncased
+  #   learning_rate:    2.0e-5
+  #   batch_size:       16
+  #   num_epochs:       5
+  #   warmup_ratio:     0.1
+  #   weight_decay:     0.01
+  #   freeze_layers:    4       # 凍結前 N 層 Transformer block
+  #   max_seq_length:   128
+  #   device:           auto    # 繼承 global.device
+
+# ------------------------------------------------------------
+# 訓練評估
+# ------------------------------------------------------------
+evaluation:
+  val_ratio: 0.2            # 20% hold-out validation（stratified）
+  cross_validation:
+    cv:      5
+    scoring: accuracy

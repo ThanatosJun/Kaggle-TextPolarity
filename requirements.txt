@@ -1,11 +1,29 @@
+# ── PyTorch (CUDA 12.6，相容 Driver 580+ / RTX 5070 Ti) ──────────────────────
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch
+
+# ── 資料處理 ─────────────────────────────────────────────────────────────────
 pandas
 numpy
+scipy
+
+# ── 視覺化 ───────────────────────────────────────────────────────────────────
 matplotlib
 seaborn
 wordcloud
+
+# ── 開發環境 ─────────────────────────────────────────────────────────────────
 jupyter
 ipykernel
+
+# ── 機器學習 ─────────────────────────────────────────────────────────────────
 scikit-learn
-scipy
-sentence-transformers
 xgboost
+
+# ── NLP / Transformer ────────────────────────────────────────────────────────
+sentence-transformers
+transformers
+accelerate
+
+# ── 設定檔讀取 ───────────────────────────────────────────────────────────────
+pyyaml

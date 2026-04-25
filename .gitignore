@@ -9,3 +9,10 @@ __pycache__/
 .venv/
 venv/
 .claude/
+.experiments/
+.results/
+
+# Experiment outputs
+experiments/
+models/
+results/
