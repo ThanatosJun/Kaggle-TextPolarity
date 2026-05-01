@@ -17,6 +17,7 @@ from src.features import (
     encode_texts, transform_topic_features,
 )
 from src.preprocess import run as preprocess
+from src.utils import set_seed
 
 
 def find_project_root(marker: str = 'config') -> Path:
@@ -98,6 +99,7 @@ def main() -> None:
 
     device    = resolve_device(cfg['global']['device'])
     seed      = cfg['global']['random_seed']
+    set_seed(cfg)
     val_ratio = cfg['evaluation']['val_ratio']
 
     lda_on = cfg['features']['lda']['enabled']

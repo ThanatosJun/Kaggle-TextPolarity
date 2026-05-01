@@ -32,8 +32,8 @@ paths:
 # 當前實驗（train.py 用來決定寫入哪個 experiments/ 子目錄）
 # ------------------------------------------------------------
 experiment:
-  id:   exp_006_NLI
-  name: NLI - BERT + NLI for domain + Meta (LDA disabled)
+  id:   exp_014_pca32
+  name: Stacking mpnet+cardiffnlp + PCA 32-dim
 
 # ------------------------------------------------------------
 # 前處理
@@ -73,17 +73,18 @@ features:
   meta:
     use_question_mark: true   # ? 計數
     use_exclaim_mark:  true   # ! 計數
+    use_vader:         false  # VADER 情感分數（neg / neu / pos / compound）
 
   sentence_transformer:
-    model_name:  all-MiniLM-L6-v2    # 384-dim，輕量通用模型
+    model_name:  all-mpnet-base-v2    # 768-dim，較高品質通用模型
     batch_size:  32
     device:      auto                 # 繼承 global.device；SentenceTransformer(device=...) 直接吃此值
-    # 備選模型（Method 2 起可切換）：
-    # model_name: all-mpnet-base-v2                               # 768-dim，較高品質
+    # 備選模型：
+    # model_name: all-MiniLM-L6-v2                                # 384-dim，輕量通用模型
     # model_name: cardiffnlp/twitter-roberta-base-sentiment-latest # 情感導向
 
   nli:
-    enabled:    true                 # true = 啟用 Zero-shot NLI domain 特徵
+    enabled:    false                # true = 啟用 Zero-shot NLI domain 特徵
     model_name: cross-encoder/nli-deberta-v3-small
     candidate_labels:
       - movie review
@@ -134,6 +135,28 @@ models:
   #   freeze_layers:    4       # 凍結前 N 層 Transformer block
   #   max_seq_length:   128
   #   device:           auto    # 繼承 global.device
+
+# ------------------------------------------------------------
+# Stacking
+# ------------------------------------------------------------
+stacking:
+  cv_folds: 5
+  base_models:
+    - id:         mpnet
+      model_name: all-mpnet-base-v2
+    - id:         cardiffnlp
+      model_name: cardiffnlp/twitter-roberta-base-sentiment-latest
+  meta_model:
+    type:     logistic_regression
+    C:        1.0
+    max_iter: 1000
+
+# ------------------------------------------------------------
+# 降維
+# ------------------------------------------------------------
+dimension_reduction:
+  method:       pca   # pca | none
+  n_components: 32
 
 # ------------------------------------------------------------
 # 訓練評估
