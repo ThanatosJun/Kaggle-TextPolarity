@@ -9,6 +9,7 @@ from xgboost import XGBClassifier
 
 from src.data_preprocess import run as preprocess
 from src.dimension_decrease import transform
+from src.model_stack import load_threshold, predict_with_threshold
 from src.text_transform import build_features
 
 
@@ -77,16 +78,26 @@ def main() -> None:
         if reducer is not None:
             print(f'   Applied reducer: {X_test_raw.shape} → {X_test.shape}')
 
-        # model_train：載入 full XGBoost
+        # model_train：載入 full XGBoost + L2 LogReg
         xgb = XGBClassifier()
         xgb.load_model(str(models_dir / f'xgb_{bm["id"]}_full.json'))
-        test_proba_list.append(xgb.predict_proba(X_test))
+        lr_path = models_dir / f'lr_{bm["id"]}_full.pkl'
+        if lr_path.exists():
+            lr = joblib.load(lr_path)
+            test_proba_list.append(np.hstack([
+                xgb.predict_proba(X_test),
+                lr.predict_proba(X_test),
+            ]))
+        else:
+            test_proba_list.append(xgb.predict_proba(X_test))
 
     # ── model_stack：Meta model 預測 ─────────────────────────────────────────
     meta_test_X = np.hstack(test_proba_list)
     meta_model  = joblib.load(models_dir / 'meta_model_full.pkl')
-    preds       = meta_model.predict(meta_test_X)
-    print(f'\nPredictions: {preds.sum()} positive / {(preds == 0).sum()} negative')
+    threshold   = load_threshold(models_dir / 'threshold.json', default=0.5)
+    preds       = predict_with_threshold(meta_model, meta_test_X, threshold)
+    print(f'\nThreshold: {threshold:.4f}')
+    print(f'Predictions: {preds.sum()} positive / {(preds == 0).sum()} negative')
 
     # ── 輸出 submission ───────────────────────────────────────────────────────
     out_path = ROOT / 'results' / f'submission_{exp_id}.csv'

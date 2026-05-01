@@ -75,19 +75,27 @@ def get_oof_and_val(X_train, y_train, X_val, cfg):
     return oof, val_proba
 
 
-def run_stacking(raw_train_list, raw_val_list, y_train, y_val, pca_dim, cfg):
+def run_stacking(raw_train_list, raw_val_list, y_train, y_val, method, n_dim, cfg):
     """
-    raw_train_list / raw_val_list: list of (n, 770) per base model
-    pca_dim: None = no PCA, int = PCA to that dimension
+    method: 'none' | 'pca' | 'pls'
+    n_dim:  None (no reduction) or int
     """
+    from sklearn.decomposition import PCA
+    from sklearn.cross_decomposition import PLSRegression
+
     oof_list = []
     val_proba_list = []
 
     for X_tr_raw, X_val_raw in zip(raw_train_list, raw_val_list):
-        if pca_dim is not None:
-            pca = PCA(n_components=pca_dim, random_state=cfg['global']['random_seed'])
-            X_tr  = pca.fit_transform(X_tr_raw)
-            X_val_ = pca.transform(X_val_raw)
+        if method == 'pca' and n_dim:
+            reducer = PCA(n_components=n_dim, random_state=cfg['global']['random_seed'])
+            X_tr   = reducer.fit_transform(X_tr_raw)
+            X_val_ = reducer.transform(X_val_raw)
+        elif method == 'pls' and n_dim:
+            reducer = PLSRegression(n_components=n_dim)
+            reducer.fit(X_tr_raw, y_train)
+            X_tr   = reducer.transform(X_tr_raw)
+            X_val_ = reducer.transform(X_val_raw)
         else:
             X_tr   = X_tr_raw
             X_val_ = X_val_raw
@@ -126,7 +134,6 @@ def main():
     proc_train = preprocess(train_df, cfg)
     proc_val   = preprocess(val_df,   cfg)
 
-    # ── 預先 encode 所有 base model（只跑一次）──────────────────────────────
     base_cfgs = cfg['stacking']['base_models']
     raw_train_list, raw_val_list = [], []
 
@@ -140,20 +147,29 @@ def main():
         raw_train_list.append(X_tr)
         raw_val_list.append(X_val)
 
-    # ── PCA 消融 ──────────────────────────────────────────────────────────
-    pca_dims = [None, 256, 128, 64, 32]   # None = 原始 770 維
-    print(f'\n{"="*55}')
-    print(f'{"PCA dim":<15} {"Val F1":>10}')
-    print(f'{"-"*55}')
+    # ── 消融：PCA vs PLS vs 無降維 ───────────────────────────────────────
+    conditions = [
+        ('none',  None,  'no DR (770-dim)'),
+        ('pca',   256,   'PCA 256-dim'),
+        ('pca',   128,   'PCA 128-dim'),
+        ('pca',    32,   'PCA  32-dim'),
+        ('pls',    32,   'PLS  32-dim'),
+        ('pls',    16,   'PLS  16-dim'),
+        ('pls',     8,   'PLS   8-dim'),
+    ]
+
+    orig_dim = raw_train_list[0].shape[1]
+    print(f'\n{"="*50}')
+    print(f'{"方法":<20} {"Val F1":>10}')
+    print(f'{"-"*50}')
 
     results = {}
-    for dim in pca_dims:
-        label = f'{dim}-dim' if dim else f'no PCA ({raw_train_list[0].shape[1]}-dim)'
-        f1 = run_stacking(raw_train_list, raw_val_list, y_train, y_val, dim, cfg)
+    for method, n_dim, label in conditions:
+        f1 = run_stacking(raw_train_list, raw_val_list, y_train, y_val, method, n_dim, cfg)
         results[label] = f1
-        print(f'{label:<15} {f1:>10.4f}')
+        print(f'{label:<20} {f1:>10.4f}')
 
-    print(f'{"="*55}')
+    print(f'{"="*50}')
     best = max(results, key=results.get)
     print(f'\nBest: {best}  →  Val F1 = {results[best]:.4f}')
 

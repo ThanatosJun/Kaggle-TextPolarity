@@ -130,25 +130,85 @@ np.hstack([X_bert, X_topics, X_meta, X_nli]) → XGBoost
 
 ## 實驗紀錄
 
-| 實驗 ID | 描述 | Val F1 | Kaggle |
-|---------|------|--------|--------|
-| exp_003 | MiniLM + XGBoost（正則化） | 0.7124 | — |
-| exp_004 | + CountVectorizer LDA | 0.7171 | — |
-| exp_005 | 消融：移除 LDA | 0.7374 | 0.71404 |
-| exp_006 | + NLI 領域特徵 | 0.7250 | — |
-| exp_007 | 換 mpnet（768-dim） | 0.8200 | — |
-| exp_008 | cardiffnlp 情感模型 | 0.7875 | — |
-| **exp_009** | **Stacking（mpnet + cardiffnlp）** | **0.8375** | **0.76749** |
-| exp_010 | cardiffnlp + VADER（對照組） | 0.7849 | — |
-| exp_011 | mpnet + VADER | 0.8024 | — |
-| exp_012 | Stacking + num_num/num_extend → number | 0.8350 | — |
-| exp_013 | Stacking baseline（模組化重構後基準） | 0.8375 | — |
-| **exp_014** | **Stacking + PCA 32-dim 降維** | **0.8375** | — |
+| 實驗 ID | 描述 | Train F1 | Val F1 | Kaggle |
+|---------|------|----------|--------|--------|
+| exp_003 | MiniLM + XGBoost（正則化） | 0.9937 | 0.7124 | — |
+| exp_004 | + CountVectorizer LDA | 0.9900 | 0.7171 | — |
+| exp_005 | 消融：移除 LDA | 0.9912 | 0.7374 | 0.71404 |
+| exp_006 | + NLI 領域特徵 | 0.9925 | 0.7250 | — |
+| exp_007 | 換 mpnet（768-dim） | 0.9988 | 0.8200 | — |
+| exp_008 | cardiffnlp 情感模型 | 0.9969 | 0.7875 | — |
+| **exp_009** | **Stacking（mpnet + cardiffnlp）** | **0.8344** | **0.8375** | **0.76749** |
+| exp_010 | cardiffnlp + VADER（對照組） | 0.9969 | 0.7849 | — |
+| exp_011 | mpnet + VADER | 0.9969 | 0.8024 | — |
+| exp_012 | Stacking + num_num/num_extend → number | 0.8337 | 0.8350 | — |
+| exp_013 | Stacking baseline（模組化重構後基準） | 0.8294 | 0.8375 | — |
+| exp_014 | Stacking + PCA 32-dim 降維 | 0.8212 | 0.8400 | — |
+| exp_015 | Stacking + PCA 32-dim + Optuna XGBoost | 0.8325 | 0.8400 | — |
+| **exp_016** | **Stacking 3 models + XGBoost + L2 LogReg per base** | **0.8569** | **0.8625** | — |
 
+> exp_003–exp_008（Train F1 ≈ 0.99）：單模型直接 fit train split，嚴重 overfit，Train/Val 差距超過 0.25。  
+> exp_009 起改用 OOF Stacking，Train F1 降至 ~0.83（OOF 預測值），Train/Val 差距收斂到 0.01 以內，泛化大幅改善。  
 > exp_010 / exp_011：VADER 無額外幫助，mpnet 的 768-dim embedding 已涵蓋情感信號。  
 > exp_012：文字清洗改動在誤差範圍內，保留作為後續實驗的標準前處理。  
 > exp_013：程式碼模組化重構（src/ 拆分為 5 個獨立模組），功能與 exp_009 相同，確認重構無迴歸。  
-> exp_014：PCA 將 770-dim 壓縮至 32-dim（保留 ~47% 變異），Val F1 與基準持平，XGBoost 訓練速度提升。
+> exp_014：PCA 將 770-dim 壓縮至 32-dim（保留 ~47% 變異），Val F1 略升。  
+> exp_015：Optuna 50 trials 調 XGBoost 超參（inner 5-fold CV），Val F1 與 exp_014 持平，確認超參已近上限。  
+> exp_016：消融驗證 — 第三個模型（bge_large）貢獻 +0.0325，L2 LogReg 單獨加入反而 -0.0125；兩者合用 +0.0225。主要增益來自 bge_large 的多樣性。
+
+### 完整消融：模型組合 × 分類器（ablation_exp016.py）
+
+14 個條件，固定 PCA 32-dim，train/val split 相同。
+
+| 模型組合 | clf | meta 維度 | Train F1 | Val F1 |
+|----------|-----|-----------|----------|--------|
+| mpnet | XGB | (n,2) | 0.8050 | 0.8223 |
+| mpnet | XGB+LR | (n,4) | 0.8156 | 0.8200 |
+| cardiffnlp | XGB | (n,2) | 0.7931 | 0.7800 |
+| cardiffnlp | XGB+LR | (n,4) | 0.7956 | 0.7924 |
+| bge_large | XGB | (n,2) | 0.8394 | 0.8600 |
+| bge_large | XGB+LR | (n,4) | 0.8431 | 0.8700 |
+| mpnet + cardiffnlp | XGB | (n,4) | 0.8325 | 0.8400 |
+| mpnet + cardiffnlp | XGB+LR | (n,8) | 0.8319 | 0.8275 |
+| **mpnet + bge_large** | **XGB+LR** | **(n,8)** | **0.8506** | **0.8800** |
+| mpnet + bge_large | XGB | (n,4) | 0.8500 | 0.8775 |
+| cardiffnlp + bge_large | XGB | (n,4) | 0.8444 | 0.8599 |
+| cardiffnlp + bge_large | XGB+LR | (n,8) | 0.8456 | 0.8675 |
+| mpnet + cardiffnlp + bge_large | XGB | (n,6) | 0.8550 | 0.8725 |
+| mpnet + cardiffnlp + bge_large | XGB+LR | (n,12) | 0.8569 | 0.8625 |
+
+> **bge_large 是最強單一模型**（0.8600），大幅領先 mpnet（0.8223）和 cardiffnlp（0.7800）。  
+> **最佳組合：mpnet + bge_large + XGB+LR（0.8800）**，三模型加入 cardiffnlp 反而下降（領域偏移雜訊）。  
+> cardiffnlp 在 Twitter 情感資料訓練，遇到電影/商品/遊戲評論出現領域偏移，embedding 帶入雜訊。
+
+### PCA 維度消融：XGB+LR × 模型數量（ablation_pca_2model.py / ablation_pca_3model.py）
+
+固定 XGB+LR，比較 mpnet+bge_large（2-model）與 mpnet+cardiffnlp+bge_large（3-model）在不同 DR 設定下的表現。
+
+**2-model（mpnet + bge_large）+ XGB+LR**
+
+| 降維設定 | meta 維度 | var% | Train F1 | Val F1 |
+|----------|-----------|------|----------|--------|
+| no DR | (n,8) | 100% | 0.8537 | 0.8750 |
+| PCA 128-dim | (n,8) | 78.6% | 0.8494 | 0.8775 |
+| PCA 64-dim | (n,8) | 62.9% | 0.8512 | 0.8725 |
+| **PCA 32-dim** | **(n,8)** | **48.2%** | **0.8475** | **0.8875** |
+| PCA 16-dim | (n,8) | 35.9% | 0.8525 | 0.8750 |
+
+**3-model（mpnet + cardiffnlp + bge_large）+ XGB+LR**
+
+| 降維設定 | meta 維度 | var% | Train F1 | Val F1 |
+|----------|-----------|------|----------|--------|
+| **no DR** | **(n,12)** | **100%** | **0.8569** | **0.8800** |
+| PCA 128-dim | (n,12) | 83.6% | 0.8512 | 0.8775 |
+| PCA 64-dim | (n,12) | 70.8% | 0.8531 | 0.8775 |
+| PCA 32-dim | (n,12) | 58.2% | 0.8525 | 0.8675 |
+| PCA 16-dim | (n,12) | 47.4% | 0.8506 | 0.8725 |
+
+> **目前最佳：mpnet + bge_large + XGB+LR + PCA 32 → Val F1 = 0.8875**（超越 ablation_exp016 的 0.8800）。  
+> 2-model：PCA 32 是甜蜜點，比 no DR 多 +0.0125；過度壓縮（16-dim）和不壓縮都會下降。  
+> 3-model：PCA 反而有損，no DR 最佳（0.8800）；原因是 PCA 把三個模型互補的 embedding 混合壓縮，破壞了多樣性。  
+> 結論：2-model 受益於 PCA 的正則化（資料量少），3-model 資訊量更豐富，PCA 壓縮的損失大於正則化增益。
 
 完整紀錄見 [experiments/results.csv](experiments/results.csv)。
 

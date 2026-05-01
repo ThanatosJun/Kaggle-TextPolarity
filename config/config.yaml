@@ -32,8 +32,8 @@ paths:
 # 當前實驗（train.py 用來決定寫入哪個 experiments/ 子目錄）
 # ------------------------------------------------------------
 experiment:
-  id:   exp_014_pca32
-  name: Stacking mpnet+cardiffnlp + PCA 32-dim
+  id:   exp_018_3models_no_dr_with_threshold
+  name: Stacking 3 models + XGBoost + L2 LogReg per base + no DR + final logistic regression threshold tuning
 
 # ------------------------------------------------------------
 # 前處理
@@ -111,18 +111,23 @@ models:
     eval_metric:     logloss
     device:          cuda
 
-  # Method 2：XGBoost Classifier（加入正則化，防止 2000 筆過擬合）
+  # Stacking base model：L2 Logistic Regression
+  logreg_base:
+    C:        1.0
+    max_iter: 1000
+
+  # Method 2：XGBoost Classifier（Optuna 調參，exp_015）
   xgboost:
-    n_estimators:    300
-    learning_rate:   0.05
-    max_depth:       3
+    n_estimators:    503
+    learning_rate:   0.0239
+    max_depth:       5
     random_state:    42
     eval_metric:     logloss
     device:          cuda
-    subsample:       0.8
-    colsample_bytree: 0.8
-    reg_alpha:       0.1
-    reg_lambda:      1.0
+    subsample:       0.697
+    colsample_bytree: 0.964
+    reg_alpha:       0.0023
+    reg_lambda:      1.5346
 
   # Method 2 預留：Fine-tuned BERT（參數待定）
   # bert_finetune:
@@ -146,6 +151,8 @@ stacking:
       model_name: all-mpnet-base-v2
     - id:         cardiffnlp
       model_name: cardiffnlp/twitter-roberta-base-sentiment-latest
+    - id:         bge_large
+      model_name: BAAI/bge-large-en-v1.5
   meta_model:
     type:     logistic_regression
     C:        1.0
@@ -155,7 +162,7 @@ stacking:
 # 降維
 # ------------------------------------------------------------
 dimension_reduction:
-  method:       pca   # pca | none
+  method:       none  # pca | none
   n_components: 32
 
 # ------------------------------------------------------------

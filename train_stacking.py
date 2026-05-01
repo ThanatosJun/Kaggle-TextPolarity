@@ -13,8 +13,10 @@ from sklearn.model_selection import train_test_split
 from src.data_preprocess import run as preprocess
 from src.dimension_decrease import fit_transform, transform
 from src.experiment import log_to_csv, save_metrics, snapshot_config
-from src.model_stack import train as train_meta
-from src.model_train import get_oof_and_final
+from src.model_stack import (
+    find_threshold, predict_with_threshold, save_threshold, train as train_meta,
+)
+from src.model_train import get_oof_multi, get_oof_and_final
 from src.text_transform import build_features
 from src.utils import set_seed
 
@@ -103,21 +105,26 @@ def main() -> None:
         )
         print(f'   Raw feature shape: {X_train_raw.shape}')
 
-        # dimension_decrease：PCA fit on train, transform val
-        X_train, reducer = fit_transform(X_train_raw, cfg)
+        # dimension_decrease：fit on train（PLS 需要 y），transform val
+        X_train, reducer = fit_transform(X_train_raw, cfg, y=y_train)
         X_val_            = transform(reducer, X_val_raw)
         if reducer is not None:
             joblib.dump(reducer, models_dir / f'reducer_{bm["id"]}.pkl')
         print(f'   Reduced shape: {X_train.shape}')
 
-        # model_train：5-fold OOF + final model
+        # model_train：5-fold OOF，XGBoost + L2 LogReg 同一組 fold
         print(f'   OOF ({st_cfg["cv_folds"]}-fold CV)...')
-        oof, final_model = get_oof_and_final(X_train, y_train, cfg)
-        oof_list.append(oof)
-        val_proba_list.append(final_model.predict_proba(X_val_))
+        oof, final_xgb, final_lr = get_oof_multi(X_train, y_train, cfg)
+        oof_list.append(oof)   # (n, 4)
+        val_proba = np.hstack([
+            final_xgb.predict_proba(X_val_),
+            final_lr.predict_proba(X_val_),
+        ])
+        val_proba_list.append(val_proba)
 
-        final_model.save_model(str(models_dir / f'xgb_{bm["id"]}.json'))
-        print(f'   Saved: xgb_{bm["id"]}.json')
+        final_xgb.save_model(str(models_dir / f'xgb_{bm["id"]}.json'))
+        joblib.dump(final_lr, models_dir / f'lr_{bm["id"]}.pkl')
+        print(f'   Saved: xgb_{bm["id"]}.json + lr_{bm["id"]}.pkl')
 
     # ── 4. model_stack：Meta model（Train split）─────────────────────────────
     print('\n── Meta model ──')
@@ -127,9 +134,13 @@ def main() -> None:
 
     meta_model = train_meta(meta_train_X, y_train, cfg)
 
-    # ── 5. 評估 ───────────────────────────────────────────────────────────────
-    train_metrics = print_metrics(y_train, meta_model.predict(meta_train_X), 'Train (OOF)')
-    val_metrics   = print_metrics(y_val,   meta_model.predict(meta_val_X),   'Val')
+    # ── 5. Threshold 最佳化（在 val set 上搜尋）──────────────────────────────
+    threshold, thr_f1 = find_threshold(meta_model, meta_val_X, y_val)
+    print(f'\n   Best threshold: {threshold:.4f}  (Val F1 = {thr_f1:.4f})')
+
+    # ── 6. 評估 ───────────────────────────────────────────────────────────────
+    train_metrics = print_metrics(y_train, predict_with_threshold(meta_model, meta_train_X, threshold), 'Train (OOF)')
+    val_metrics   = print_metrics(y_val,   predict_with_threshold(meta_model, meta_val_X,   threshold), 'Val')
 
     # ── 6. 儲存 experiment metrics ────────────────────────────────────────────
     exp_dir = ROOT / 'experiments' / exp['id']
@@ -138,6 +149,7 @@ def main() -> None:
         'val_ratio':     val_ratio,
         'train_metrics': train_metrics,
         'val_metrics':   val_metrics,
+        'threshold':     threshold,
         'kaggle_score':  None,
         'note':          f'Stacking: {[b["id"] for b in base_cfgs]} | DR: {dr_method}',
     })
@@ -162,19 +174,22 @@ def main() -> None:
             proc_full['bert_texts'], proc_full['meta'],
             bm['model_name'], batch_size, device,
         )
-        X_full, reducer_full = fit_transform(X_full_raw, cfg)
+        X_full, reducer_full = fit_transform(X_full_raw, cfg, y=y_full)
         if reducer_full is not None:
             joblib.dump(reducer_full, models_dir / f'reducer_{bm["id"]}_full.pkl')
 
-        oof_full, final_full = get_oof_and_final(X_full, y_full, cfg)
+        oof_full, final_xgb_full, final_lr_full = get_oof_multi(X_full, y_full, cfg)
         oof_full_list.append(oof_full)
-        final_full.save_model(str(models_dir / f'xgb_{bm["id"]}_full.json'))
-        print(f'   Saved: xgb_{bm["id"]}_full.json')
+        final_xgb_full.save_model(str(models_dir / f'xgb_{bm["id"]}_full.json'))
+        joblib.dump(final_lr_full, models_dir / f'lr_{bm["id"]}_full.pkl')
+        print(f'   Saved: xgb_{bm["id"]}_full.json + lr_{bm["id"]}_full.pkl')
 
     meta_full_X     = np.hstack(oof_full_list)
     meta_model_full = train_meta(meta_full_X, y_full, cfg)
     joblib.dump(meta_model_full, models_dir / 'meta_model_full.pkl')
     joblib.dump(meta_model,      models_dir / 'meta_model.pkl')
+    save_threshold(models_dir / 'threshold.json', threshold)
+    print(f'   Threshold: {threshold:.4f}')
     print(f'\n✅ All artifacts saved: {models_dir}')
 
 
