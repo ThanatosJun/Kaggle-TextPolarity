@@ -5,6 +5,26 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 
 
+def build_meta(cfg: dict) -> LogisticRegression:
+    mc = cfg['stacking']['meta_model']
+    return LogisticRegression(
+        C            = mc.get('C', 1.0),
+        max_iter     = mc.get('max_iter', 1000),
+        random_state = cfg['global']['random_seed'],
+    )
+
+
+def find_threshold_from_proba(proba: np.ndarray, y: np.ndarray,
+                               step: float = 0.01) -> tuple[float, float]:
+    best_t, best_f1 = 0.5, 0.0
+    for t in np.arange(0.05, 0.96, step):
+        preds = (proba >= t).astype(int)
+        f1 = f1_score(y, preds, average='macro', zero_division=0)
+        if f1 > best_f1:
+            best_f1, best_t = f1, float(t)
+    return round(best_t, 4), round(best_f1, 4)
+
+
 def train(meta_X: np.ndarray, y: np.ndarray, cfg: dict) -> LogisticRegression:
     """Train meta model on stacked OOF probabilities."""
     mc = cfg['stacking']['meta_model']
