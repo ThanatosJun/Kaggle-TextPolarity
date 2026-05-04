@@ -14,7 +14,7 @@ global:
 # 資料路徑
 # ------------------------------------------------------------
 paths:
-  train:             datasets/train_2022.csv
+  train:             datasets/train_2022_augmented.csv
   test:              datasets/test_2022.csv
   sample_submission: datasets/sample_submission.csv
   models_dir:        models
@@ -23,8 +23,8 @@ paths:
 # 當前實驗
 # ------------------------------------------------------------
 experiment:
-  id:   exp_025_holdout_raw2022
-  name: Stacking 3 models + XGBoost + L2 LogReg + no DR + NLPaug + GroupKFold OOF base + holdout val meta
+  id:   exp_030_MTB_noDR_nlpaug
+  name: Stacking 3 models + XGBoost + L2 LogReg + no DR + NLPaug + GroupKFold OOF + holdout val + threshold tuning
 
 # ------------------------------------------------------------
 # 前處理

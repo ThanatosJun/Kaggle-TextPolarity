@@ -232,6 +232,10 @@ flowchart LR
 | exp_023 | 3 models + NLPaug + 2-level OOF | 0.8589 | 0.8594 | — | — |
 | **exp_024** | **3 models + NLPaug + GroupKFold + holdout val** | **0.8491** | **0.8875** | **0.79118** | **0.80488** |
 | exp_025 | 3 models + no aug + holdout val（對照組） | 0.8562 | 0.8850 | 0.79476 | 0.79782 |
+| **exp_026** | **M+B（mpnet+bge_large）+ no DR + original data** | **0.8556** | **0.8825** | **0.79669** | **0.80013** |
+| exp_027 | M+T+B（3 models）+ no DR + original data | 0.8562 | 0.8850 | 0.79476 | 0.79782 |
+| **exp_028** | **M+B + PCA 32（embedding only）+ original data** | **0.8537** | **0.8775** | **0.79228** | **0.80189** |
+| exp_029 | M+T+B + PCA 32（embedding only）+ original data | 0.8492 | 0.8800 | 0.79146 | 0.79877 |
 
 > exp_003–exp_008：單模型直接 fit，Train F1 ≈ 0.99，嚴重 overfit，Train/Val 差距 > 0.25。  
 > exp_009 起改用 OOF Stacking，Train F1 降至 ~0.83，Train/Val 差距收斂到 0.01 以內。  
@@ -245,7 +249,11 @@ flowchart LR
 > exp_021：GroupKFold 確保 OOF fold 內配對不跨 fold，Val F1 回升至 0.8825。  
 > exp_023：2-level OOF（base+meta 同 fold），Train/Val 差距極小（0.8589 / 0.8594），但因 meta 評估也用 OOF 而非獨立 holdout，可比性較低。  
 > **exp_024：GroupKFold OOF（3200 train）+ 400 holdout val，private 0.80488 為目前最高分。**  
-> exp_025：回歸無增強原始資料，Kaggle private 0.79782，與 exp_018 相同，確認 NLPaug 對 private score 有正向貢獻（exp_024 > exp_025）。
+> exp_025：回歸無增強原始資料，Kaggle private 0.79782，與 exp_018 相同，確認 NLPaug 對 private score 有正向貢獻（exp_024 > exp_025）。  
+> exp_026：改用 M+B（移除 cardiffnlp），private 0.80013，為無增強系列最高分；驗證消融結果，cardiffnlp 在 Kaggle 上無正向貢獻。  
+> exp_027：M+T+B 原始資料重跑，private 0.79782，與 exp_025 完全一致（相同設定），確認實驗可重現性。  
+> **exp_028：M+B + PCA 32（只套 embedding），private 0.80189，超越 exp_026 no DR（0.80013），為無增強系列目前最高；val F1 雖低於 no DR（0.8775 vs 0.8825），顯示 holdout val 與測試集分佈存在差異，PCA 正則化在 Kaggle 上有額外泛化效果。**  
+> exp_029：M+T+B + PCA 32，private 0.79877，略優於 exp_027 no DR（0.79782），趨勢與 exp_028 一致，但 M+B 在 no DR 與 PCA 32 兩種設定下均優於 M+T+B。
 
 ---
 
@@ -253,52 +261,54 @@ flowchart LR
 
 ### 模型組合 × 分類器（EDA/ablation_exp016.py）
 
-固定 PCA 32-dim，14 個條件。
+固定 no DR，14 個條件。（重跑：PCA 已修正為只套在 encoder embedding 上，本實驗改用 no DR）
 
 | 模型組合 | 分類器 | meta 維度 | Train F1 | Val F1 |
 |----------|--------|-----------|----------|--------|
-| mpnet | XGB | (n,2) | 0.8050 | 0.8223 |
-| mpnet | XGB+LR | (n,4) | 0.8156 | 0.8200 |
-| cardiffnlp | XGB | (n,2) | 0.7931 | 0.7800 |
-| cardiffnlp | XGB+LR | (n,4) | 0.7956 | 0.7924 |
-| bge_large | XGB | (n,2) | 0.8394 | 0.8600 |
-| bge_large | XGB+LR | (n,4) | 0.8431 | 0.8700 |
-| mpnet + cardiffnlp | XGB | (n,4) | 0.8325 | 0.8400 |
-| mpnet + cardiffnlp | XGB+LR | (n,8) | 0.8319 | 0.8275 |
-| **mpnet + bge_large** | **XGB+LR** | **(n,8)** | **0.8506** | **0.8800** |
-| mpnet + bge_large | XGB | (n,4) | 0.8500 | 0.8775 |
-| cardiffnlp + bge_large | XGB | (n,4) | 0.8444 | 0.8599 |
-| cardiffnlp + bge_large | XGB+LR | (n,8) | 0.8456 | 0.8675 |
-| mpnet + cardiffnlp + bge_large | XGB | (n,6) | 0.8550 | 0.8725 |
-| mpnet + cardiffnlp + bge_large | XGB+LR | (n,12) | 0.8569 | 0.8625 |
+| mpnet | XGB | (n,2) | 0.8137 | 0.8300 |
+| mpnet | XGB+LR | (n,4) | 0.8175 | 0.8250 |
+| cardiffnlp | XGB | (n,2) | 0.7824 | 0.7925 |
+| cardiffnlp | XGB+LR | (n,4) | 0.7956 | 0.8000 |
+| bge_large | XGB | (n,2) | 0.8462 | 0.8775 |
+| bge_large | XGB+LR | (n,4) | 0.8412 | 0.8750 |
+| mpnet + cardiffnlp | XGB | (n,4) | 0.8325 | 0.8325 |
+| mpnet + cardiffnlp | XGB+LR | (n,8) | 0.8313 | 0.8400 |
+| **mpnet + bge_large** | **XGB** | **(n,4)** | **0.8569** | **0.8875** |
+| mpnet + bge_large | XGB+LR | (n,8) | 0.8537 | 0.8799 |
+| cardiffnlp + bge_large | XGB | (n,4) | 0.8456 | 0.8749 |
+| cardiffnlp + bge_large | XGB+LR | (n,8) | 0.8487 | 0.8800 |
+| mpnet + cardiffnlp + bge_large | XGB | (n,6) | 0.8581 | 0.8874 |
+| mpnet + cardiffnlp + bge_large | XGB+LR | (n,12) | 0.8569 | 0.8800 |
 
-> bge_large 是最強單一模型（0.8600），大幅領先 mpnet（0.8223）和 cardiffnlp（0.7800）。  
-> cardiffnlp 在 Twitter 情感資料訓練，遇到電影/商品/遊戲評論出現領域偏移，embedding 帶入雜訊。  
-> 最佳 2-model 組合（mpnet + bge_large，0.8800）接近 3-model（0.8625），3-model 加入 cardiffnlp 反而略降。
+> bge_large 是最強單一模型（0.8775），大幅領先 mpnet（0.8300）和 cardiffnlp（0.7925）。  
+> 最佳 2-model 組合：mpnet + bge_large + XGB（0.8875），與 3-model + XGB（0.8874）幾乎持平。  
+> 加入 cardiffnlp 對整體 Val F1 影響有限，但保有 embedding 多樣性。
 
 ### PCA 維度消融（EDA/ablation_pca_2model.py / ablation_pca_3model.py）
+
+PCA 只套在 encoder embedding 上（不含 ? / ! meta feature）。var% 為 embedding 空間的變異解釋率。
 
 **2-model（mpnet + bge_large）+ XGB+LR**
 
 | 降維設定 | var% | Train F1 | Val F1 |
 |----------|------|----------|--------|
-| no DR | 100% | 0.8537 | 0.8750 |
-| PCA 128-dim | 78.6% | 0.8494 | 0.8775 |
-| PCA 64-dim | 62.9% | 0.8512 | 0.8725 |
-| **PCA 32-dim** | **48.2%** | **0.8475** | **0.8875** |
-| PCA 16-dim | 35.9% | 0.8525 | 0.8750 |
+| **no DR** | **100%** | **0.8537** | **0.8799** |
+| PCA 128-dim | 76.9% | 0.8487 | 0.8775 |
+| PCA 64-dim | 60.1% | 0.8494 | 0.8775 |
+| PCA 32-dim | 44.5% | 0.8550 | 0.8775 |
+| PCA 16-dim | 31.8% | 0.8556 | 0.8725 |
 
 **3-model（mpnet + cardiffnlp + bge_large）+ XGB+LR**
 
 | 降維設定 | var% | Train F1 | Val F1 |
 |----------|------|----------|--------|
 | **no DR** | **100%** | **0.8569** | **0.8800** |
-| PCA 128-dim | 83.6% | 0.8512 | 0.8775 |
-| PCA 64-dim | 70.8% | 0.8531 | 0.8775 |
-| PCA 32-dim | 58.2% | 0.8525 | 0.8675 |
-| PCA 16-dim | 47.4% | 0.8506 | 0.8725 |
+| PCA 128-dim | 82.5% | 0.8488 | 0.8725 |
+| PCA 64-dim | 68.9% | 0.8525 | 0.8800 |
+| PCA 32-dim | 55.8% | 0.8594 | 0.8700 |
+| PCA 16-dim | 44.7% | 0.8581 | 0.8700 |
 
-> 2-model：PCA 32 是甜蜜點（+0.0125 vs no DR），正則化效果大於資訊損失。  
-> 3-model：PCA 反而有損，no DR 最佳；三模型互補 embedding 混合壓縮後多樣性下降。
+> 兩種配置均以 no DR 為最佳（M+B: 0.8799，M+T+B: 0.8800）。  
+> PCA 只套 embedding 後，原本 2-model 的 PCA 32 甜蜜點消失，no DR 統一為最佳選擇。
 
 完整紀錄見 [experiments/results.csv](experiments/results.csv)。

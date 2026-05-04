@@ -1,84 +1,59 @@
-import pandas as pd
 import re
+import numpy as np
+import pandas as pd
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-def clean_for_tfidf(text):
-    """
-    Text preprocessing for Traditional ML (TF-IDF).
-    Goals: Lowercase, remove punctuations (keeping logic for ?, !), remove placeholders.
-    """
-    text = str(text).lower()
-    
-    # 1. 移除特定的字眼 (e.g., -lrb-, -rrb-)
-    text = re.sub(r'-lrb-', '', text)
-    text = re.sub(r'-rrb-', '', text)
-    
-    # 2. 處理特定的 placeholder，如果認為沒用也可以移除
-    text = re.sub(r'num_num', '', text)
-    text = re.sub(r'num_extend', '', text)
-    
-    # 3. 把標點符號清除 (只保留小寫字母、數字與空白)
-    text = re.sub(r'[^a-z0-9\s]', ' ', text)
-    
-    # 4. 把多餘的空白換成單一空白
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+_vader = SentimentIntensityAnalyzer()
 
-def clean_for_llm(text):
-    """
-    Text preprocessing for LLMs (BERT, RoBERTa).
-    Goals: Restore structures, keep punctuations, fix tokenization issues.
-    """
-    text = str(text)
-    
-    # 1. 還原括號
-    text = text.replace('-lrb-', '(').replace('-rrb-', ')')
-    
-    # 2. 修復被切開的否定詞或特殊符號 (如 does n't -> doesn't)
-    text = re.sub(r'\s+n\'t', "n't", text)
-    text = re.sub(r'\s+\'s', "'s", text)
-    text = re.sub(r'\s+\'re', "'re", text)
-    text = re.sub(r'\s+\'ll', "'ll", text)
-    text = re.sub(r'\s+\'ve', "'ve", text)
-    text = re.sub(r'\s+\'m', "'m", text)
-    text = re.sub(r'\s+\'d', "'d", text)
-    
-    # 3. 修復與標點符號間的多餘空白 (e.g., "word ." -> "word.")
+
+def clean_for_tfidf(text: str, cfg: dict) -> str:
+    pre = cfg['preprocessing']
+    if not isinstance(text, str):
+        return ''
+    text = text.lower()
+    text = text.replace(pre['track_a']['lrb_token'], ' ')
+    text = text.replace(pre['track_a']['rrb_token'], ' ')
+    text = re.sub(r'[^a-zA-Z]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def clean_for_bert(text: str, cfg: dict) -> str:
+    pre = cfg['preprocessing']
+    if not isinstance(text, str):
+        return ''
+    text = text.replace(pre['track_a']['lrb_token'], pre['track_b']['lrb_replace'])
+    text = text.replace(pre['track_a']['rrb_token'], pre['track_b']['rrb_replace'])
+    # 替換數字佔位符為 number，讓 BERT 理解上下文
+    text = text.replace(pre['special_tokens']['num_token'],    'number')
+    text = text.replace(pre['special_tokens']['extend_token'], 'number')
+    # 修復被斷開的縮寫（e.g., "does n't" → "doesn't"）
+    for suffix in ("n't", "'s", "'re", "'ll", "'ve", "'m", "'d"):
+        text = re.sub(r"\s+" + re.escape(suffix), suffix, text)
+    # 修復標點前多餘空白（e.g., "word ." → "word."）
     text = re.sub(r'\s+([.,!?])', r'\1', text)
-    
-    # 4. 保留 num_num / num_extend (供後續加入 special_tokens 使用)
-    
-    # 5. 清理多餘空白
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return re.sub(r'\s+', ' ', text).strip()
 
-def extract_meta_features(df, text_col='TEXT'):
-    """
-    Extract meta features (punctuation counts, word counts) before deep cleaning.
-    """
-    df = df.copy()
-    df['word_count'] = df[text_col].astype(str).apply(lambda x: len(x.split()))
-    df['exclamation_count'] = df[text_col].astype(str).apply(lambda x: x.count('!'))
-    df['question_count'] = df[text_col].astype(str).apply(lambda x: x.count('?'))
-    return df
 
-if __name__ == "__main__":
-    # 測試腳本
-    sample_texts = [
-        "director dirk shafer and co-writer greg hinton ride the dubious divide where gay porn reaches for serious drama .",
-        "the price was good ,  and came quickly though my prime membership .",
-        "i was looking forward to this game for a couple of num_extend",
-        "-lrb- wendigo is -rrb- why we go to the cinema : to be fed through the eye , the heart , the mind .",
-        "it does n't feel like one !"
-    ]
-    
-    df = pd.DataFrame({'TEXT': sample_texts})
-    df = extract_meta_features(df)
-    df['TEXT_tfidf'] = df['TEXT'].apply(clean_for_tfidf)
-    df['TEXT_llm'] = df['TEXT'].apply(clean_for_llm)
-    
-    for i, row in df.iterrows():
-        print(f"--- 行 {i} ---")
-        print(f"[Original] {row['TEXT']}")
-        print(f"[TF-IDF]   {row['TEXT_tfidf']}")
-        print(f"[LLM]      {row['TEXT_llm']}")
-        print()
+def extract_meta(df: pd.DataFrame, cfg: dict, bert_texts: list) -> np.ndarray:
+    meta = {}
+    if cfg['features']['meta']['use_question_mark']:
+        meta['q_mark'] = df['TEXT'].apply(lambda x: str(x).count('?'))
+    if cfg['features']['meta']['use_exclaim_mark']:
+        meta['e_mark'] = df['TEXT'].apply(lambda x: str(x).count('!'))
+    if cfg['features']['meta'].get('use_vader', False):
+        # 使用 Track B 文字（縮寫已修復），VADER 才能正確辨識否定詞
+        scores = [_vader.polarity_scores(t) for t in bert_texts]
+        meta['vader_neg']      = [s['neg']      for s in scores]
+        meta['vader_neu']      = [s['neu']      for s in scores]
+        meta['vader_pos']      = [s['pos']      for s in scores]
+        meta['vader_compound'] = [s['compound'] for s in scores]
+    return pd.DataFrame(meta).values
+
+
+def run(df: pd.DataFrame, cfg: dict) -> dict:
+    bert_texts = df['TEXT'].apply(lambda t: clean_for_bert(t, cfg)).tolist()
+    return {
+        'tfidf_texts': df['TEXT'].apply(lambda t: clean_for_tfidf(t, cfg)).tolist(),
+        'bert_texts':  bert_texts,
+        'meta':        extract_meta(df, cfg, bert_texts),
+    }

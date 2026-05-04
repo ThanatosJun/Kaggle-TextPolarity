@@ -62,14 +62,16 @@ def build_lr(cfg):
     )
 
 
-def apply_pca(X_train_raw, X_val_raw, n_components, seed):
+def apply_pca(X_train_raw, X_val_raw, n_components, seed, n_meta=2):
     if n_components is None:
         return X_train_raw, X_val_raw
+    X_tr_emb,  X_tr_meta  = X_train_raw[:, :-n_meta], X_train_raw[:, -n_meta:]
+    X_vl_emb,  X_vl_meta  = X_val_raw[:,  :-n_meta], X_val_raw[:,  -n_meta:]
     reducer = PCA(n_components=n_components, random_state=seed)
-    X_tr  = reducer.fit_transform(X_train_raw)
-    X_val = reducer.transform(X_val_raw)
+    X_tr_pca = reducer.fit_transform(X_tr_emb)
+    X_vl_pca = reducer.transform(X_vl_emb)
     var_explained = reducer.explained_variance_ratio_.sum()
-    return X_tr, X_val, var_explained
+    return np.hstack([X_tr_pca, X_tr_meta]), np.hstack([X_vl_pca, X_vl_meta]), var_explained
 
 
 def run_condition(raw_train_list, raw_val_list, y_train, y_val, n_components, cfg):

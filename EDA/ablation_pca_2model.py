@@ -68,11 +68,14 @@ def run_condition(raw_train_list, raw_val_list, y_train, y_val, n_components, cf
     oof_parts, val_parts = [], []
     total_var = []
 
+    n_meta = 2
     for X_tr_raw, X_vl_raw in zip(raw_train_list, raw_val_list):
         if n_components is not None:
+            X_tr_emb, X_tr_meta = X_tr_raw[:, :-n_meta], X_tr_raw[:, -n_meta:]
+            X_vl_emb, X_vl_meta = X_vl_raw[:, :-n_meta], X_vl_raw[:, -n_meta:]
             reducer = PCA(n_components=n_components, random_state=seed)
-            X_tr  = reducer.fit_transform(X_tr_raw)
-            X_vl  = reducer.transform(X_vl_raw)
+            X_tr = np.hstack([reducer.fit_transform(X_tr_emb), X_tr_meta])
+            X_vl = np.hstack([reducer.transform(X_vl_emb),     X_vl_meta])
             total_var.append(reducer.explained_variance_ratio_.sum())
         else:
             X_tr, X_vl = X_tr_raw, X_vl_raw
